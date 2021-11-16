@@ -1,0 +1,125 @@
+---
+title: "Project Course"
+author: "Presto"
+date: "15 de noviembre de 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+Predicting classe of excercise
+=======================================================
+
+Using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, which they were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Being the correct way the class A and classes B to E different incorrect ways of perform barbell lifts.
+With a dataset of 19622 observations and 160 variables I used the Caret package and tried different prediction methods until I found one that predict correctly 99.5 percent of the observations in the evaluation.
+
+First I set the working directory and read the train and the test datasets and the Caret package
+
+```{r}
+setwd("~/Curso/Practical Machine Learning")
+train_set<-read.csv("pml-training.csv")
+test_set<-read.csv("pml-testing.csv")
+library(caret)
+table(train_set$classe)
+```
+
+
+## Preprocessing
+
+I realize that there are a lot of variables with missing values in the train dataset so I ran a table of missing values percentage.
+
+```{r}
+perc_na<-sapply(train_set, function(x) sum(is.na (x)))/nrow(train_set)
+table(round(perc_na))
+```
+
+Once I dropped the variables with missing values there are still variables with no information , so I run a zero variance control so I can drop variables without implications for the prediction model, I used the nearZeroVar function in the Caret package.
+
+```{r}
+vector_names<- perc_na==0
+train_set<-train_set[,vector_names]
+test_set<-test_set[,vector_names]
+nzv <- nearZeroVar(train_set)
+nzv
+train_set<-train_set[,-nzv]
+test_set<-test_set[,-nzv]
+```
+
+Then I drop the first six variables that are ID variables and not really a measure.
+
+```{r}
+train_set<-train_set[,-c(1:6)]
+test_set<-test_set[,-c(1:6)]
+```
+
+Next I check for variables with a lot of absolute correlation between themselves using the findCorrelation function from the Caret package. Leaving the response variable out I found 4 variables with absolute correlation greater than 0.95 and I drop them from both datasets.
+
+```{r}
+descrCor <-  cor(train_set[,-53])
+highlyCorDescr <- findCorrelation(descrCor, cutoff = .95)
+train_set2 <- train_set[,-highlyCorDescr]
+test_set2 <- test_set[,-highlyCorDescr]
+```
+
+Finally I standarize the predictors using the preProcess function applied to the train set. With that scaling I standarize both the train and the test datasets.
+
+```{r}
+pp=preProcess(train_set2, method = c("center","scale"))
+train_set2<-predict(pp, train_set2)
+test_set2<-predict(pp, test_set2)
+```
+
+## Training models
+
+Once I had the data preprocessed I trained different models for classification, and checked the accuracy of the clasification in the validation set.
+I need to select the training control of the train sample, I use cross validation leaving a 25% of the sample for validation and used 10 different folds each time. The training is done with the 75% of the sample and is evaluated on the remaining 25% as if that were the test dataset so it gives an idea of the out of sample error.
+
+```{r}
+set.seed(1111)
+trcontrol<-trainControl(method = "cv", 
+                        number = 10, 
+                        p=0.75)
+```
+
+Now with that estimation strategy, I train 5 models, a bayesian generalized lineal model, a classification tree, a linear discriminant analysis, a regularized discriminant analysis and a random forest.
+
+```{r}
+glm=train(data=train_set2, 
+          classe~.,
+          method="bayesglm",
+          trControl=trcontrol)
+glm
+cart=train(data=train_set2, 
+         classe~.,
+         method="rpart",
+         trControl=trcontrol)
+cart
+lasso=train(data=train_set2, 
+            classe~.,
+            method="sparseLDA",
+            trControl=trcontrol)
+lasso
+lda=train(data=train_set2, 
+            classe~.,
+            method="lda",
+            trControl=trcontrol)
+lda
+rf=train(data=train_set2, 
+         classe~.,
+         method="rf",
+         trControl=trcontrol)
+rf
+```
+
+The accuracy starts below expected in the glm method, it rises to 50% in the classification tree, and to around 68% in the discriminant analyisis, is not very different from the regularized discriminant because I already dropped the variables with high autocorrelation, then rises up to 99.5% in the random forest. 
+I stopped after this method because there isn't much gains to keep fitting models when you have an accuracy of 99.5%.
+
+Finally I predict the classe of the test dataset applying the predict function to the random forest 
+
+```{r}
+prf=predict(rf, test_set2)
+prf
+```
+
